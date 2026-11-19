@@ -78,6 +78,43 @@ except (KeyboardInterrupt, SystemExit):
 
 Run the script you just created: `python3 test_router.py`
 
+## Using TashRouter with Basilisk II (udptunnel)
+
+[Basilisk II](https://github.com/cebix/macemu) can tunnel its emulated Ethernet over UDP, with no root privileges, tap device or bridging.  `UdpTunnelPort` speaks the same format, so unmodified copies of Basilisk II (and SheepShaver with a matching patch) join a TashRouter network as an EtherTalk segment.
+
+In each copy of Basilisk II, select an EtherTalk-capable network in the Network control panel (AppleTalk control panel on later systems) and put these lines in the prefs file (`~/.basilisk_ii_prefs` on Unix-like systems):
+
+```
+udptunnel true
+udpport 6066
+```
+
+Then give TashRouter a `UdpTunnelPort`.  For example, to route between an LToUDP network (such as Mini vMac) and Basilisk II, replace the ports in `test_router.py` above with:
+
+```python
+from tashrouter.port.appletalk.ethertalk.udptunnel import UdpTunnelPort
+from tashrouter.port.appletalk.localtalk.ltoudp import LtoudpPort
+
+router = Router('router', ports=(
+  LtoudpPort(seed_network=1, seed_zone_name=b'LToUDP Network'),
+  UdpTunnelPort(seed_network_min=3, seed_network_max=5, seed_zone_names=[b'Basilisk Network']),
+))
+```
+
+`UdpTunnelPort` takes these options in addition to the usual EtherTalk seed options:
+
+* `port`: the UDP port, which must match Basilisk II's `udpport` (default 6066).
+* `broadcast_address`: where broadcast and multicast frames go.  The default is `'255.255.255.255'`; a subnet's directed broadcast (such as `'192.168.1.255'`) or an interface name (such as `'eth0'` or `'en0'`) also works.  macOS sends `255.255.255.255` only out of its primary interface, so use one of the other forms on a host with more than one interface.
+* `local_address`: the router's own IPv4 address, from which its Ethernet address is made.  By default it is the address of the interface given as `broadcast_address`, or else of the interface that routes to it.
+
+Things to know:
+
+* Each node's Ethernet address is made from its IPv4 address, and Basilisk II binds its UDP port exclusively, so only one copy of Basilisk II can run per IP address.
+* The router needs its own IP address, distinct from every copy of Basilisk II, and so in practice its own host, VM or container.
+* All the nodes must be on one IPv4 subnet, since broadcasts don't cross routers.  It is ordinary UDP, so Wi-Fi works.
+* Basilisk II takes its address from its host name.  If that resolves to a loopback address (Debian and Ubuntu map the host name to `127.0.1.1` by default), TashRouter replies to the address its frames come from, but other copies of Basilisk II can't reach it directly; fix the host name's entry in `/etc/hosts`.
+* `tools/udptunnel_node.py` pretends to be a Basilisk II node: it sends an AARP probe and an RTMP request and prints what the router answers, which is a quick way to check that the router is reachable.
+
 ## Using TashRouter with a tap and Netatalk 2.x
 
 See [this post](https://68kmla.org/bb/index.php?threads/tashrouter-an-appletalk-router.46047/post-518796) on the 68kMLA forum.  Note that `TapPort` has been changed to `LinuxTapPort` and `BsdTapPort` for Linux and BSD, respectively.
