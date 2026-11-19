@@ -107,24 +107,50 @@ For emulators that only speak multicast LToUDP, `tools/ltoudp_hub_client.py` (Py
 
 ### Example: sharing a Raspberry Pi with a friend's tailnet
 
-On the Pi, which runs TashRouter and has the tailnet address `100.101.102.103`, give the LToUDP port hub mode alongside any other ports:
+Here the Pi runs TashRouter in your tailnet, with the machine name `pi`, the tailnet address `100.101.102.103` and the tailnet DNS name `example-tailnet.ts.net`.  Your friend has their own tailnet, and a computer that runs an LToUDP emulator (such as a Mini vMac LToUDP build).
 
-```python
-router = Router('router', ports=(
-  LtoudpPort(seed_network=1, seed_zone_name=b'LToUDP Network', hub=True, hub_address='100.101.102.103'),
-  MacvtapPort(macvtap_name='macvtap0', seed_network_min=3, seed_network_max=5, seed_zone_names=[b'EtherTalk Network']),
-))
-```
+On your side:
 
-Binding the tailnet address means Tailscale must be up before TashRouter starts.  `hub_address='0.0.0.0'` avoids that, and the allowlist below still keeps everyone but tailnet addresses out.
+1. Give the Pi's LToUDP port hub mode, alongside any other ports, and start TashRouter:
 
-[Share the Pi](https://tailscale.com/kb/1084/sharing) with your friend's tailnet from the Tailscale admin console.  If your tailnet policy limits ports, allow UDP 1955 to the Pi.  Your friend then runs their LToUDP emulator (such as a Mini vMac LToUDP build) as usual, and next to it:
+   ```python
+   router = Router('router', ports=(
+     LtoudpPort(seed_network=1, seed_zone_name=b'LToUDP Network', hub=True, hub_address='100.101.102.103'),
+     MacvtapPort(macvtap_name='macvtap0', seed_network_min=3, seed_network_max=5, seed_zone_names=[b'EtherTalk Network']),
+   ))
+   ```
 
-```
-python3 tools/ltoudp_hub_client.py 100.101.102.103
-```
+   Binding the tailnet address means Tailscale must be up before TashRouter starts.  `hub_address='0.0.0.0'` avoids that, and the default allowlist still admits only tailnet addresses.
 
-Their emulated Mac joins the `LToUDP Network` zone along with the Macs on your LAN.  Use `--interface` (such as `--interface en0`) to choose which local interface's multicast group to bridge.
+2. [Share the Pi](https://tailscale.com/docs/features/sharing) with your friend: open the [Machines](https://console.tailscale.com/admin/machines) page of the admin console, find the Pi, and send your friend an invite by email or by link.  This needs the Owner, Admin or IT admin role in your tailnet.
+
+3. Check your tailnet policy.  The default policy allows everything, so there is nothing to do.  If you have a custom policy, it must let shared users reach UDP port 1955 on the Pi, for example with this grant:
+
+   ```json
+   "grants": [
+     {
+       "src": ["autogroup:shared"],
+       "dst": ["100.101.102.103"],
+       "ip": ["udp:1955"]
+     }
+   ]
+   ```
+
+   `autogroup:shared` means every user who has accepted a share from your tailnet; use your friend's login email instead to admit only them.
+
+On your friend's side:
+
+1. Install Tailscale, sign in to their own tailnet, and accept the invite.  The Pi then appears among their machines (`tailscale status` lists it).  If their tailnet has a custom policy file, it must also allow connections to the shared Pi.
+
+2. Start the LToUDP emulator as usual, and next to it, on the same computer or the same LAN, run the client:
+
+   ```
+   python3 tools/ltoudp_hub_client.py 100.101.102.103
+   ```
+
+   With MagicDNS on in their tailnet, the Pi's full name works too: `pi.example-tailnet.ts.net`.  A shared machine is reachable only by its full name, not by `pi` alone.  Use `--interface` (such as `--interface en0`) to choose which local interface's multicast group to bridge.
+
+Their emulated Mac joins the `LToUDP Network` zone along with the Macs on your LAN.  Tailscale [quarantines](https://tailscale.com/docs/features/sharing#quarantine) shared machines: the Pi can answer your friend's machine but not start a connection to it.  That's why the client speaks first and sends keepalives, and why nothing needs sharing in the other direction.
 
 ### Hub options
 
